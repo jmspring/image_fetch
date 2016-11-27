@@ -1,5 +1,8 @@
 var express = require('express');
 var exec = require('child_process').exec;
+var storageApi = require('azure-storage');
+var request = require('request');
+var stream = require('stream');
 var app = express();
 
 // constants
@@ -44,8 +47,45 @@ function timestamp() {
 
 function fetch_image(now, env) {
   lastRetrieval = now;
-  imagesFetched++;
-  fetch_image_timer();
+  var blobService = storageApi.createBlobService(env.storageAccount, env.storageAccountKey);
+  blobService.createContainerIfNotExists(env.storageAccountContainer, {publicAccessLevel : 'Blob'}, 
+                    function(error, result, response) {
+    if (error) {
+      console.log("Unable to create storage account container: " + env.storageAccountContainer + ", error: " + error);
+      storeIssues++;
+      fetch_image_timer();
+    } else {
+      var requestSettings = {
+         method: 'GET',
+         url: env.imageUrl,
+         encoding: null
+      };
+      request(requestSettings, function (error, response, body) {
+        if (!error && response.statusCode == 200) {
+          var imageStream = new stream.PassThrough();
+          imageStream.end(body);
+          var blobname = '' + now + '.jpg';
+          var imageLength = response.headers['content-length'];
+          blobService.createBlockBlobFromStream(env.storageAccountContainer, 
+                                                blobname,
+                                                imageStream,
+                                                imageLength,
+                                                function(error, result, response) {
+            if(error) {
+              // TODO - consider logging the failure
+              storeIssues++;
+            } else {
+              imagesFetched++;
+            }
+            fetch_image_timer();
+          });
+        } else {
+          storeIssues++;
+          fetch_image_timer();
+        }
+      });
+    }
+  });
 }
 
 function fetch_image_timer() {
