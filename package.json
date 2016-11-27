@@ -1,0 +1,24 @@
+{
+  "name": "image_fetch",
+  "version": "0.0.1",
+  "description": "Grabs images from specified URL and stores them in Azure Blob Store",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "azure-storage": "*",
+    "request": "*",
+    "express": "4.14.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jmspring/image_fetch.git"
+  },
+  "author": "Jim Spring",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jmspring/image_fetch/issues"
+  },
+  "homepage": "https://github.com/jmspring/image_fetch#readme"
+}
