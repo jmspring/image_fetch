@@ -2,14 +2,30 @@ var express = require('express');
 var exec = require('child_process').exec;
 var app = express();
 
+// constants
+var lastRetrieval = 0;
+var imagesFetched = 0;
+var retrieveIssues = 0;
+var storeIssues = 0;
+
 // Retrieve environment variables
 function environment_vars() {
-  return {
+  var captureFrequency = 10; // default to 10 seconds
+  if(typeof(process.env.CAPTURE_FREQUNCY) != 'undefined') {
+    captureFrequency = parseInt(process.env.CAPTURE_FREQUNCY);
+    if(captureFrequncy <= 0) {
+      console.log("CAPTURE_FREQUENCY must be greater than 0");
+      captureFrequency = 10
+    }
+  }
+  var env = {
     "storageAccount":           process.env.AZURE_STORAGE_ACCOUNT_NAME,
     "storageAccountKey":        process.env.AZURE_STORAGE_ACCOUNT_KEY,
     "storageAccountContainer":  process.env.AZURE_STORAGE_ACCOUNT_CONTAINER_NAME,
-    "imageUrl":                 process.env.IMAGE_CAPTURE_URL
-  }
+    "imageUrl":                 process.env.IMAGE_CAPTURE_URL,
+    "captureFrequency":         captureFrequency
+  };
+  return env;
 }
 
 function required_environment_vars_set(vars) {
@@ -20,6 +36,30 @@ function required_environment_vars_set(vars) {
     return true;
   }
   return false;
+}
+
+function timestamp() {
+  return Math.floor(Date.now() / 1000);
+}
+
+function fetch_image(now, env) {
+  lastRetrieval = now;
+  imagesFetched++;
+  fetch_image_timer();
+}
+
+function fetch_image_timer() {
+  var env = environment_vars();
+  var now = timestamp();
+  if(now - lastRetrieval > env.captureFrequency) {
+    if(required_environment_vars_set(env)) {
+      fetch_image(now, env);
+    }
+  } else {
+    setTimeout(function() {
+      fetch_image_timer();
+    }, 250);
+  }
 }
 
 // Return a 200 for kubernetes healthchecks
@@ -48,9 +88,13 @@ app.get('/', function(req, res) {
     res.write('Powered by ' + poweredBy + '\nRelease ' + release + ' on ' + container + '\n');
 
     if(required_environment_vars_set(env) == false) {
-        res.write("Not all required environment variables set.\n");
+        res.write('Not all required environment variables set.\n');
     }
+    res.write('Environment variables:\n');
     res.write(JSON.stringify(env));
+    res.write('\n');
+    res.write('Stats:\n' + '  last image retrieval = ' + lastRetrieval + '\n  images fetched = ' + imagesFetched + '\n');
+    res.write('  errors retrieving images = ' + retrieveIssues + '\n  errors storing images = ' + storeIssues + '\n');
     res.write('\n');
     res.end()
   });
@@ -61,3 +105,6 @@ var port = process.env.PORT || 5000;
 server = app.listen(port, function () {
   console.log('Server listening on port %d in %s mode', server.address().port, app.settings.env);
 });
+
+/* Start the image retrieval timer */
+fetch_image_timer();
