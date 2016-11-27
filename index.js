@@ -5,6 +5,7 @@
 //  AZURE_STORAGE_ACCOUNT_KEY
 //  AZURE_STORAGE_ACCOUNT_CONTAINER_NAME
 //  IMAGE_CAPTURE_URL
+
 var express = require('express');
 var exec = require('child_process').exec;
 var storageApi = require('azure-storage');
