@@ -99,6 +99,7 @@ function fetch_image_timer() {
   var env = environment_vars();
   var now = timestamp();
   if(now - lastRetrieval > env.captureFrequency) {
+    // image retrieval only occurs if required environment variables specified.
     if(required_environment_vars_set(env)) {
       fetch_image(now, env);
     }
