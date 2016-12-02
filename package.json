@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "azure-storage": "*",
+    "azure": "1.2.0-preview",
     "request": "*",
     "express": "4.14.x"
   },
