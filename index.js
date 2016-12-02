@@ -65,7 +65,6 @@ function timestamp() {
 }
 
 function fetch_image(now, priorImage, env) {
-  lastRetrieval = now;
   var blobService = storageApi.createBlobService(env.storageAccount, env.storageAccountKey);
   blobService.createContainerIfNotExists(env.storageAccountContainer, {publicAccessLevel : 'Blob'}, 
                     function(error, result, response) {
@@ -97,25 +96,29 @@ function fetch_image(now, priorImage, env) {
             } else {              
               imagesFetched++;
 
-              // send message to he queue indicating a new image to compare
-              payload = {
-                'timestamp':  now,
-                'prior_image': priorImage,
-                'current_image': blobName
-              };
-              var svcBusConnectionString = "Endpoint=sb://" + env['serviceBusNamespace'] + 
-                                           ".servicebus.windows.net/;SharedAccessKeyName=" +
-                                           env['serviceBusSharedAccessName'] + 
-                                           ";SharedAccessKey=" + env['serviceBusSharedAccessKey'];
-              var serviceBusSvc = new azure.ServiceBusService(svcBusConnectionString);
-              serviceBusSvc.sendQueueMessage(env['serviceBusQueue'], JSON.stringify(payload), function(error) {
-                if(error) {
-                  // TODO - log error
-                  priorImage = null;
-                  sendIssues++;
-                }
-                fetch_image_timer(priorImage);
-              })
+              if(priorImage != null) {
+                // send message to he queue indicating a new image to compare
+                payload = {
+                  'timestamp':  now,
+                  'prior_image': priorImage,
+                  'current_image': blobName
+                };
+                var svcBusConnectionString = "Endpoint=sb://" + env['serviceBusNamespace'] + 
+                                            ".servicebus.windows.net/;SharedAccessKeyName=" +
+                                            env['serviceBusSharedAccessName'] + 
+                                            ";SharedAccessKey=" + env['serviceBusSharedAccessKey'];
+                var serviceBusSvc = new azure.ServiceBusService(svcBusConnectionString);
+                serviceBusSvc.sendQueueMessage(env['serviceBusQueue'], JSON.stringify(payload), function(error) {
+                  if(error) {
+                    // TODO - log error
+                    blobName = null;
+                    sendIssues++;
+                  }
+                  fetch_image_timer(blobName);
+                })
+              } else {
+                fetch_image_timer(blobName);
+              }
             }
           });
         } else {
