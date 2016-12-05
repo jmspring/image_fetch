@@ -5,6 +5,10 @@
 //  AZURE_STORAGE_ACCOUNT_KEY
 //  AZURE_STORAGE_ACCOUNT_CONTAINER_NAME
 //  IMAGE_CAPTURE_URL
+//  AZURE_SERVICE_BUS_NAMESPACE,
+//  AZURE_SERVICE_BUS_QUEUE,
+//  AZURE_SERVICE_BUS_SHARED_ACCESS_NAME,
+//  AZURE_SERVICE_BUS_SHARED_ACCESS_KEY,
 
 var express = require('express');
 var exec = require('child_process').exec;
@@ -15,7 +19,7 @@ var stream = require('stream');
 var app = express();
 
 
-// constants
+// stats
 var lastRetrieval = 0;
 var imagesFetched = 0;
 var retrieveIssues = 0;
@@ -95,6 +99,7 @@ function fetch_image(now, priorImage, env) {
               fetch_image_timer(null);
             } else {              
               imagesFetched++;
+              lastRetrieval = now;
 
               if(priorImage != null) {
                 // send message to he queue indicating a new image to compare
