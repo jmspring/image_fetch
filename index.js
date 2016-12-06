@@ -20,18 +20,32 @@ var app = express();
 
 
 // stats
-var lastRetrieval = 0;
-var imagesFetched = 0;
-var retrieveIssues = 0;
-var storeIssues = 0;
-var sendIssues = 0;
+stats = {
+  'images': {
+    'last_retrieval': 0,
+    'retrieved': 0,
+    'errors': 0,
+    'last_error': null
+  }, 
+  'store': {
+    'last_stored': 0,
+    'stored': 0,
+    'errors': 0,
+    'last_error': 0
+  },
+  'queue': {
+    'sent': 0,
+    'errors': 0,
+    'last_error': null
+  }
+};
 
 // Retrieve environment variables
 function environment_vars() {
   var captureFrequency = 10; // default to 10 seconds
-  if(typeof(process.env.CAPTURE_FREQUNCY) != 'undefined') {
-    captureFrequency = parseInt(process.env.CAPTURE_FREQUNCY);
-    if(captureFrequncy <= 0) {
+  if(typeof(process.env.CAPTURE_FREQUENCY) != 'undefined') {
+    captureFrequency = parseInt(process.env.CAPTURE_FREQUENCY);
+    if(captureFrequency <= 0) {
       console.log("CAPTURE_FREQUENCY must be greater than 0");
       captureFrequency = 10
     }
@@ -47,6 +61,17 @@ function environment_vars() {
     "imageUrl":                   process.env.IMAGE_CAPTURE_URL,
     "captureFrequency":           captureFrequency
   };
+  return env;
+}
+
+function filter_environment_vars_for_output(env) {
+  for(key in env) {
+    console.log(key);
+    console.log(env[key]);
+    if((key.indexOf('Key') > -1) || (key.indexOf('key') > -1)) {
+      env[key] = '********';
+    } 
+  }
   return env;
 }
 
@@ -74,8 +99,9 @@ function fetch_image(now, priorImage, env) {
                     function(error, result, response) {
     if (error) {
       console.log("Unable to create storage account container: " + env.storageAccountContainer + ", error: " + error);
-      storeIssues++;
-      fetch_image_timer(null);
+      stats['store']['errors']++;
+      stats['store']['last_error'] = error;
+      fetch_image_timer(null, -1);
     } else {
       var requestSettings = {
          method: 'GET',
@@ -84,6 +110,9 @@ function fetch_image(now, priorImage, env) {
       };
       request(requestSettings, function (error, response, body) {
         if (!error && response.statusCode == 200) {
+          stats['images']['retrieved']++;
+          stats['images']['last_retrieval'] = now;              
+
           var imageStream = new stream.PassThrough();
           imageStream.end(body);
           var blobName = '' + now + '.jpg';
@@ -95,11 +124,12 @@ function fetch_image(now, priorImage, env) {
                                                 function(error, result, response) {
             if(error) {
               // TODO - consider logging the failure
-              storeIssues++;
-              fetch_image_timer(null);
-            } else {              
-              imagesFetched++;
-              lastRetrieval = now;
+              stats['store']['errors']++;
+              stats['store']['last_error'] = error;
+              fetch_image_timer(null, -1);
+            } else {
+              stats['store']['stored']++;
+              stats['store']['last_retrieval'] = now;              
 
               if(priorImage != null) {
                 // send message to he queue indicating a new image to compare
@@ -108,6 +138,7 @@ function fetch_image(now, priorImage, env) {
                   'prior_image': priorImage,
                   'current_image': blobName
                 };
+                console.log('Current: ' + blobName + ', Prior: ' + priorImage + ', Timestamp: ' + now); 
                 var svcBusConnectionString = "Endpoint=sb://" + env['serviceBusNamespace'] + 
                                             ".servicebus.windows.net/;SharedAccessKeyName=" +
                                             env['serviceBusSharedAccessName'] + 
@@ -115,37 +146,43 @@ function fetch_image(now, priorImage, env) {
                 var serviceBusSvc = new azure.ServiceBusService(svcBusConnectionString);
                 serviceBusSvc.sendQueueMessage(env['serviceBusQueue'], JSON.stringify(payload), function(error) {
                   if(error) {
-                    // TODO - log error
+                    stats['queue']['errors']++;
+                    stats['queue']['last_error'] = error;
                     blobName = null;
-                    sendIssues++;
+                  } else {
+                    stats['queue']['sent']++;
                   }
-                  fetch_image_timer(blobName);
+                  fetch_image_timer(blobName, now);
                 })
               } else {
-                fetch_image_timer(blobName);
+                fetch_image_timer(blobName, now);
               }
             }
           });
         } else {
-          storeIssues++;
-          fetch_image_timer(null);
+          stats['images']['errors']++;
+          stats['images']['last_error'] = error;
+          fetch_image_timer(null, -1);
         }
       });
     }
   });
 }
 
-function fetch_image_timer(priorImage) {
+function fetch_image_timer(priorImage, lastRetrieval) {
   var env = environment_vars();
   var now = timestamp();
-  if(now - lastRetrieval > env.captureFrequency) {
+  if((lastRetrieval >= 0) && (now - lastRetrieval > env.captureFrequency)) {
     // image retrieval only occurs if required environment variables specified.
     if(required_environment_vars_set(env)) {
       fetch_image(now, priorImage, env);
     }
   } else {
+    if(lastRetrieval < 0) {
+      lastRetrieval = 0;
+    }
     setTimeout(function() {
-      fetch_image_timer(priorImage);
+      fetch_image_timer(priorImage, lastRetrieval);
     }, 250);
   }
 }
@@ -153,6 +190,26 @@ function fetch_image_timer(priorImage) {
 // Return a 200 for kubernetes healthchecks
 app.get('/healthz', function(req, res) {
   res.status(200).end();
+});
+
+// Show stats
+app.get('/stats', function(req, res) {
+  res.setHeader('content-type', 'text/plain');
+  res.write(JSON.stringify(stats, null, 4));
+  res.end();
+});
+
+// Show stats
+app.get('/config', function(req, res) {
+  res.setHeader('content-type', 'text/plain');
+  res.write('\n');
+  var text = JSON.stringify(filter_environment_vars_for_output(environment_vars()), null, 4);
+  console.log(text);
+  res.write(text);
+  if(required_environment_vars_set(environment_vars()) == false) {
+      res.write('\nNot all required environment variables set.\n');
+  }  
+  res.end();
 });
 
 app.get('/', function(req, res) {
@@ -178,12 +235,6 @@ app.get('/', function(req, res) {
     if(required_environment_vars_set(env) == false) {
         res.write('Not all required environment variables set.\n');
     }
-    res.write('Environment variables:\n');
-    res.write(JSON.stringify(env));
-    res.write('\n');
-    res.write('Stats:\n' + '  last image retrieval = ' + lastRetrieval + '\n  images fetched = ' + imagesFetched + '\n');
-    res.write('  errors retrieving images = ' + retrieveIssues + '\n  errors storing images = ' + storeIssues + '\n');
-    res.write('  errors sending payload = ' + sendIssues + '\n');
     res.write('\n');
     res.end()
   });
@@ -196,4 +247,4 @@ server = app.listen(port, function () {
 });
 
 /* Start the image retrieval timer */
-fetch_image_timer(null);
+fetch_image_timer(null, 0);
