@@ -31,7 +31,7 @@ stats = {
     'last_stored': 0,
     'stored': 0,
     'errors': 0,
-    'last_error': 0
+    'last_error': null
   },
   'queue': {
     'sent': 0,
@@ -161,7 +161,11 @@ function fetch_image(now, priorImage, env) {
           });
         } else {
           stats['images']['errors']++;
-          stats['images']['last_error'] = error;
+          if(error) {
+            stats['images']['last_error'] = error;
+          } else {
+            stats['images']['last_error'] = 'Status code received: ' + response.statusCode;
+          }
           fetch_image_timer(null, -1);
         }
       });
