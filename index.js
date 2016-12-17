@@ -66,8 +66,6 @@ function environment_vars() {
 
 function filter_environment_vars_for_output(env) {
   for(key in env) {
-    console.log(key);
-    console.log(env[key]);
     if((key.indexOf('Key') > -1) || (key.indexOf('key') > -1)) {
       env[key] = '********';
     } 
